@@ -64,33 +64,13 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture
-def test_model_name(conformance_test_version, request, dl_bandwidth_str):
+def test_model_name(request, dl_bandwidth_str):
     if dl_bandwidth_str not in {"BW5", "BW10"}:
         pytest.skip(f"Tx conformance test models are only defined for 5MHz/10MHz, got {dl_bandwidth_str}")
-    if conformance_test_version == '6.5.3':
-        if dl_bandwidth_str == 'BW10':
-            return 'NR-FR1-TM3_1__FDD_10MHz_30kHz'
-        else:
-            return 'NR-FR1-TM3_1__FDD_5MHz_15kHz'
-    elif conformance_test_version == '6.3.3':
-        nodeid = request.node.nodeid
-        test_name = nodeid.split('::', 1)[1] if '::' in nodeid else nodeid
-        test_split = test_name.split('_')  # remove parameterisation from test name
-        if test_split[10].split('-')[0] == 'run2' or test_split[10].split('-')[0] == 'run0':
-            if dl_bandwidth_str == 'BW10':
-                return 'NR-FR1-TM2__FDD_10MHz_30kHz'
-            else:
-                return 'NR-FR1-TM2__FDD_5MHz_15kHz'
-        else:
-            if dl_bandwidth_str == 'BW10':
-                return 'NR-FR1-TM3_1__FDD_10MHz_30kHz'
-            else:
-                return 'NR-FR1-TM3_1__FDD_5MHz_15kHz'
-    elif conformance_test_version in ['6.2', '6.6.2', '6.6.3', '6.6.4']:
-        if dl_bandwidth_str == 'BW10':
-            return 'NR-FR1-TM1_1__FDD_10MHz_30kHz'
-        else:
-            return 'NR-FR1-TM1_1__FDD_5MHz_15kHz'
+    if dl_bandwidth_str == 'BW10':
+        return 'NR-FR1-TM1_1__FDD_10MHz_30kHz'
+    else:
+        return 'NR-FR1-TM1_1__FDD_5MHz_15kHz'
 
 @pytest.fixture
 def basic_display_setup_scpi(test_model_name, dl_centre_freq: int, dl_bandwidth_str: str, vsa_osc_source: str, vsa_sweep: str, vsa_trigger_power_dbm: float, vsa_trigger_hold_time: float, conformance_test_version: str, dl_bandwidth: int) -> 'list[str]':
@@ -99,82 +79,6 @@ def basic_display_setup_scpi(test_model_name, dl_centre_freq: int, dl_bandwidth_
             "*CLS",
             ":INIT:CONT OFF",
             ":SYST:ERR:CLE:REM", # Clear/Delete All Remote Errors
-        ]
-    if conformance_test_version in ['6.5.3', '6.3.3', '6.2', '16.15']:
-        cmds += [
-            # start the spectrum view on the CF with 100MHz Span, add max hold then start it.
-            # this will allow pretty ready debugging
-            f":SENS:FREQ:CENT {int(dl_centre_freq)}",
-            ":SENS:FREQ:SPAN 100000000",
-            ":DISP:WIND1:SUBW:TRAC2:MODE MAXH",
-            ":INIT:CONT ON",#########
-            ":INST:CRE:NEW NR5G, '5G NR'",
-            ":INIT:CONT OFF",
-            # turn off attenuation
-            ":INP:ATT:AUTO OFF",
-            ":INP:ATT 0",
-            # System display settings - sets up windows on the analyser.
-            ":SYST:DISP:UPD ON",
-            ":LAY:REM:WIND '7'",
-            ":LAY:REM:WIND '5'",
-            ":LAY:REM:WIND '4'",
-            ":LAY:REM:WIND '3'",
-            ":LAY:REM:WIND '2'",
-            ":LAY:REM:WIND '1'",
-            ":LAY:ADD:WIND? '6',ABOV,CBUF",
-            ":LAY:ADD:WIND? '1',RIGH,EVSY",
-            ":LAY:ADD:WIND? '2',RIGH,RSUM",
-            ":LAY:ADD:WIND? '6',RIGH,BSTR", # bitstream table slot 4
-            ":LAY:ADD:WIND? '4',RIGH,ASUM", # alloc summary slot 5
-            ":LAY:ADD:WIND? '6',ABOV,PSPE",
-            # Setting up Evaluation range
-            ":SENS:NR5G:CC1:BWP:SEL ALL",#############
-            ":SENS:NR5G:CC1:BWP:SEL 0",############
-            ":SENS:NR5G:CC1:SUBF:SEL ALL",#############
-            ":SENS:NR5G:CC1:SLOT:SEL 0",##########
-            ":SENS:SWE:TIME 0.0501", # 50.1ms#############
-                # sync settings
-            ":CONF:NR5G:DL:CC1:IDC ON",
-            f":CONF:NR5G:DL:CC1:BW {dl_bandwidth_str}",
-            ":CONF:NR5G:DL:CC1:PLC:CID 1",
-            ":SENS:NR5G:DEM:DDAT DPD", # Decoded Payload Data
-            f":SENS:ROSC:SOUR {'EXT' if vsa_osc_source == 'external' else 'INT'}",
-            f":SENS:EXT:ROSC:EXT:FREQ {'10000000' if vsa_osc_source == 'external' else ''}",
-            # trigger settings
-            ":TRIG:SEQ:SOUR IQP", # trigger on IQ power
-            f":TRIG:SEQ:LEV:IQP {vsa_trigger_power_dbm}", # trigger level
-            f":TRIG:SEQ:HOLD:TIME {vsa_trigger_hold_time if vsa_sweep == 'single-shot' else 0}", # trigger hold time
-            ":TRIG:SEQ:SLOP POS", # trigger on rising edge
-            ":TRIG:SEQ:DTIM 0", # drop-out time = 0
-            ":TRIG:SEQ:IFP:HOLD 0", # holdoff time = 0
-            f":SENS:NR5G:FRAM:COUN:AUTO {'OFF' if vsa_sweep == 'single-shot' else 'ON'}",
-            ":SENS:NR5G:FRAM:COUN 1", # ignored if :SENS:NR5G:FRAM:COUN:AUTO is ON (i.e. in continuos sweep mode)
-            f":MMEM:LOAD:TMOD:CC1 '{test_model_name}'",
-            ":CONF:NR5G:DL:CC1:DFR LOW",
-        ]
-    elif conformance_test_version == '6.6.4':
-        cmds += [
-            ":INST:CRE:NEW NR5G, '5G NR'",
-            ":INIT:CONT OFF",
-            ":CONF:NR5G:MEAS ESP",
-            f":MMEM:LOAD:TMOD:CC1 '{test_model_name}'",
-            f":SENS:FREQ:CENT {int(dl_centre_freq)}",
-            f":SENS:ESP1:BWID {int(dl_bandwidth)}",
-            ":INIT:CONT ON",
-        ]
-    elif conformance_test_version == '6.6.3':
-        cmds += [
-            ":INST:CRE:NEW NR5G, '5G NR'",
-            ":INIT:CONT OFF",
-            ":CONF:NR5G:MEAS ACLR",
-            f":MMEM:LOAD:TMOD:CC1 '{test_model_name}'",
-            f":SENS:FREQ:CENT {int(dl_centre_freq)}",
-            ":SENS:POW:ACH:MODE ABS",
-            f":SENS:POW:ACH:BWID:CHAN1 {int(dl_bandwidth)}",
-            f":SENS:POW:ACH:BWID:ACH {int(dl_bandwidth)}",
-        ]
-    elif conformance_test_version == '6.6.2':
-        cmds += [
             ":CALC:MARK:FUNC:POW:SEL OBW",
             f":SENS:FREQ:CENT {int(dl_centre_freq)}",
             ":SENS:POW:BWID 99PCT",
@@ -194,119 +98,27 @@ def write_vsa_output_to_file(filename, csv):
     return results_summary(csv)
 
 @pytest.fixture
-def vsa_evm_mod():
-    return 'DSSF'
-
-@pytest.fixture
-def evmvssym_table_num():
-    return 2
-
-@pytest.fixture
-def evmvsrbs_table_num():
-    return 2
-
-@pytest.fixture
-def evmvscarrier_table_num():
-    return 2
-
-@pytest.fixture
-def vsa_queries(vsa_evm_mod, alloc_summary_num, bitstream_table_num, evmvssym_table_num, evmvsrbs_table_num, evmvscarrier_table_num, conformance_test_version):
-    vsa_queries = {}
-    if conformance_test_version == '6.5.3':
-        vsa_queries = {
-            "mod_qual": [f":FETC:CC1:ISRC:FRAM:SUMM:EVM:{vsa_evm_mod}:AVER?", functools.partial(write_vsa_output_to_file, f"test_6_5_3_Modulation_Quality_results_summary.csv")],
-            "freq_error": [":FETC:CC1:ISRC:FRAM:SUMM:FERR:AVER?", functools.partial(write_vsa_output_to_file, f"test_6_5_2_Frequency_Error_results_summary.csv")]
-        }
-    elif conformance_test_version == '6.3.3':
-        vsa_queries = {
-            "results_summary": [f":FETC:CC1:ISRC:FRAM:SUMM:OSTP:AVER?", functools.partial(write_vsa_output_to_file, "test_6_3_3_total_power_dynamic_range_results_summary.csv")],
-        }
-    elif conformance_test_version == '6.6.2':
-        vsa_queries = {
-            "aobw": ["CALC:MARK:FUNC:POW:RES? AOBW", lambda x: x],
-            "cobw": ["CALC:MARK:FUNC:POW:RES? COBW", lambda x: x],
-        }
-    elif conformance_test_version == '6.6.3':
-        vsa_queries = {
-            "results_summary": [f":CALC:MARK:FUNC:POW:RES? ACP", functools.partial(write_vsa_output_to_file, "test_6_6_3_adjacent_channel_leakage_power_ratio_results_summary.csv")],
-        }
-    elif conformance_test_version == '6.6.4':
-        vsa_queries = {
-            "results_summary": ["TRAC:DATA? LIST", lambda x: x],#functools.partial(write_vsa_output_to_file, "test_6_6_4_out_of_band_emissions_results_summary.csv")],
-        }
-    elif conformance_test_version == '6.2':
-        vsa_queries = {
-            "results_summary": [f":FETC:CC1:ISRC:FRAM:SUMM:POW:AVER?", functools.partial(write_vsa_output_to_file, "test_6_2_max_output_power_results_summary.csv")],
-        }
-    elif conformance_test_version == '16.15':
-        vsa_queries = {
-            "evm_vs_sym_table": [f":TRAC{evmvssym_table_num}:DATA? TRACE1", functools.partial(write_vsa_output_to_file, f"test_16_15_PDSCH_evm_vs_symbol_table.csv")],
-            "evm_vs_rbs_table": [f":TRAC{evmvsrbs_table_num}:DATA? TRACE1", functools.partial(write_vsa_output_to_file, f"test_16_15_PDSCH_evm_vs_rb_table.csv")],
-            "evm_vs_carrier_table": [f":TRAC{evmvscarrier_table_num}:DATA? TRACE1", functools.partial(write_vsa_output_to_file, f"test_16_15_PDSCH_evm_vs_REs_table.csv")]
-        }
-    #vsa_queries.update({
-    #    "allocation_summary": [f":TRAC{alloc_summary_num}:DATA? TRACE1", functools.partial(write_vsa_output_to_file, f"test_6_5_3_Modulation_Quality_allocation_summary.csv")],
-    #    "bitstream_table": [f":TRAC{bitstream_table_num}:DATA? TRACE2", functools.partial(write_vsa_output_to_file, f"test_6_5_3_Modulation_Quality_bitstream_table.csv")],
-    #    #"evm_vs_sym_table": [f":TRAC{evmvssym_table_num}:DATA? TRACE1", functools.partial(write_vsa_output_to_file, f"test_6_5_3_Modulation_Quality_evm_vs_symbol_table.csv")]
-    #})
+def vsa_queries():
+    vsa_queries = {
+        "aobw": ["CALC:MARK:FUNC:POW:RES? AOBW", lambda x: x],
+        "cobw": ["CALC:MARK:FUNC:POW:RES? COBW", lambda x: x],
+    }
     return vsa_queries
 
 @pytest.fixture
-def start_commands(vsa_sweep, conformance_test_version, n_frame_repeats, dl_bandwidth, dl_centre_freq):
-    if conformance_test_version == '6.6.3':
-        return [
-                "SENS:POW:CAT LARE",
-                ":SENS:POW:NCOR ON",
-                "CALC:LIM:ACP:ACH: REL 24",
-                "CALC:LIM:ACP:ALT1: REL 24",
-                "CALC:LIM:ACP:ACH: ABS 30",
-                "CALC:LIM:ACP:ALT1: ABS 30",
-                # Calculate the number of sweeps based on the number of frame repeats, 
-                # ensuring the measurement occurs before frame flow stops
-                f":SENS:SWE:COUN {max(1, int((0.75 * (n_frame_repeats / 100))//0.3))}",
-                ":INIT:CONT OFF",
-                ":INIT:IMM;*WAI"
-            ]
-    elif conformance_test_version == '6.6.2':
-        return [
-                f":CALC:FLIN1 {int(dl_centre_freq)}",
-                f":CALC:FLIN2 {int(dl_centre_freq)-(int(dl_bandwidth)/2)}",
-                f":CALC:FLIN3 {int(dl_centre_freq)+(int(dl_bandwidth)/2)}",
-                ":CALC:FLIN1:STAT ON",
-                ":CALC:FLIN2:STAT ON",
-                ":CALC:FLIN3:STAT ON",
-                ":SENS:SWE:TIME:AUTO OFF",
-                f":SENS:SWE:COUN {n_frame_repeats // 2}",
-                ":INIT:CONT OFF",
-                ":INIT:IMM;*WAI"
-            ]
-    elif conformance_test_version == '6.6.4':
-        commands = [
-                ":SENS:ESP1:RANG1:DEL",
-                ":SENS:ESP1:RANG6:DEL",
-                ":SENS:ESP1:RANG1:BAND:RES 4000",
-                ":SENS:ESP1:RANG2:BAND:RES 4000",
-                ":SENS:ESP1:RANG4:BAND:RES 4000",
-                ":SENS:ESP1:RANG5:BAND:RES 4000",
-                f":SENS:ESP1:RANG3:FREQ:STAR -{int(dl_bandwidth)/2}",
-                f":SENS:ESP1:RANG3:FREQ:STOP {int(dl_bandwidth)/2}",
-                f":SENS:ESP1:RANG1:FREQ:STAR -{int(dl_bandwidth)*2.5}",
-                f":SENS:ESP1:RANG1:FREQ:STOP -{int(dl_bandwidth)*1.5}",
-                f":SENS:ESP1:RANG2:FREQ:STAR -{int(dl_bandwidth)*1.5}",
-                f":SENS:ESP1:RANG2:FREQ:STOP -{int(dl_bandwidth)/2}",
-                f":SENS:ESP1:RANG4:FREQ:STAR {int(dl_bandwidth)/2}",
-                f":SENS:ESP1:RANG4:FREQ:STOP {int(dl_bandwidth)*1.5}",
-                f":SENS:ESP1:RANG5:FREQ:STAR {int(dl_bandwidth)*1.5}",
-                f":SENS:ESP1:RANG5:FREQ:STOP {int(dl_bandwidth)*2.5}",
-                "SWE:MODE ESP"
-            ]
-        commands.extend(generate_oobe_limit_scpi(dl_bandwidth))
-        return commands
-    else:
-        if vsa_sweep == 'single-shot':
-            return ["*WAI", ":INIT:IMM", "*WAI"]
-        else:
-            return ["*WAI", ":INIT:CONT ON"]
+def start_commands(n_frame_repeats, dl_bandwidth, dl_centre_freq):
+    return [
+            f":CALC:FLIN1 {int(dl_centre_freq)}",
+            f":CALC:FLIN2 {int(dl_centre_freq)-(int(dl_bandwidth)/2)}",
+            f":CALC:FLIN3 {int(dl_centre_freq)+(int(dl_bandwidth)/2)}",
+            ":CALC:FLIN1:STAT ON",
+            ":CALC:FLIN2:STAT ON",
+            ":CALC:FLIN3:STAT ON",
+            ":SENS:SWE:TIME:AUTO OFF",
+            f":SENS:SWE:COUN {n_frame_repeats // 2}",
+            ":INIT:CONT OFF",
+            ":INIT:IMM;*WAI"
+        ]
 
 @pytest.fixture
 def setup_commands(basic_display_setup_scpi, start_commands):
